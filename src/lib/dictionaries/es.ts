@@ -27,7 +27,9 @@ export const es = {
 
   hero: {
     eyebrow: "Food truck colombiano · Utah & Temecula",
-    title: ["No es", "otra", "hamburguesa"],
+    // Dos líneas, no tres: ahora el titular comparte pantalla con la
+    // hamburguesa armada, y una tercera línea la empujaba fuera de plano.
+    title: ["No es otra", "hamburguesa"],
     lead: "Es La Colombiana. Sazón criolla, parrilla de verdad y ese bocado que sabe a casa.",
     cta: "Pedir ahora",
     ctaSecondary: "Ver la carta",

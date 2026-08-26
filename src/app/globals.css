@@ -44,10 +44,13 @@
        español, que es el idioma de referencia y el que produce las líneas más
        largas: "HAMBURGUESA" en el hero y "COLOMBIA"/"PARRILLA" en los titulares
        de sección. Subirlos parte esas palabras en dos y descuadra la página. */
-    /* El mínimo del hero está atado a "HAMBURGUESA" en 390px de ancho: a este
-       peso y anchura la palabra ocupa ~0.825em por letra, así que por encima de
-       2.25rem parte en dos y el titular pierde el golpe. */
-    --step-hero: clamp(2.25rem, 8.6vw, 9rem);
+    /* El hero está atado a dos palabras: "HAMBURGUESA" a 390px de ancho marca
+       el mínimo, y "just any burger" —la línea más larga del inglés— marca el
+       máximo. A este peso y anchura cada letra ocupa ~0.825em, así que subir de
+       7vw parte una de las dos en mitad y el titular pierde el golpe.
+       Además comparte pantalla con la hamburguesa armada, que también pide
+       sitio. */
+    --step-hero: clamp(2.25rem, 7vw, 7.5rem);
     --step-display: clamp(2.25rem, 5.4vw, 5.25rem);
     --step-title: clamp(1.6rem, 3.2vw, 2.9rem);
     --step-lead: clamp(1.05rem, 1.5vw, 1.375rem);
@@ -121,15 +124,28 @@
 }
 
 /* Grano fijo sobre todo el documento. Unifica material fotográfico de calidad
-   desigual y le quita el plano digital al carbón. */
+   desigual y le quita el plano digital al carbón.
+
+   Sin `mix-blend-mode`: una capa fija a pantalla completa con modo de fusión
+   obliga al navegador a recomponer el documento entero en cada fotograma del
+   scroll, y eso costaba ~16 ms por fotograma en móvil. A esta opacidad el
+   resultado visual es el mismo.
+
+   En punteros gruesos se retira del todo: en una pantalla de móvil el grano no
+   se aprecia y sí se paga. */
 @utility grain-overlay {
   pointer-events: none;
   position: fixed;
   inset: 0;
   z-index: 90;
-  opacity: 0.045;
-  mix-blend-mode: overlay;
+  opacity: 0.05;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@media (pointer: coarse) {
+  .grain-overlay {
+    display: none;
+  }
 }
 
 /* Todo el movimiento coreografiado se apaga aquí; cada componente entrega su

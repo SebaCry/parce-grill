@@ -78,8 +78,12 @@ const a11y = await page.evaluate(() => {
     const name = (b.getAttribute("aria-label") ?? b.textContent ?? "").trim();
     if (!name) out.push(`<button> sin nombre accesible`);
   }
-  const h1 = document.querySelectorAll("h1");
-  if (h1.length !== 1) out.push(`se esperaba exactamente un <h1>, hay ${h1.length}`);
+  // Sólo cuentan los <h1> renderizados. La página lleva dos en el marcado —el
+  // de la secuencia animada y el de su equivalente para movimiento reducido—
+  // pero `display:none` deja uno fuera del árbol de accesibilidad, así que en
+  // cada modo se expone exactamente uno.
+  const h1 = [...document.querySelectorAll("h1")].filter((el) => el.getClientRects().length > 0);
+  if (h1.length !== 1) out.push(`se esperaba exactamente un <h1> visible, hay ${h1.length}`);
   if (!document.documentElement.getAttribute("lang")) out.push("<html> sin lang");
   return out;
 });

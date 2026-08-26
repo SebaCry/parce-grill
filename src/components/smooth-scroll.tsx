@@ -14,19 +14,26 @@ import { gsap, ScrollTrigger, prefersReducedMotion } from "@/lib/gsap";
  * suavizado de lag de GSAP, que fue pensado para saltos de pestaña y aquí sólo
  * introduce salto.
  *
- * Con movimiento reducido no se monta nada: el scroll nativo del sistema es
- * exactamente lo que esa preferencia está pidiendo.
+ * No se monta en dos casos:
+ *
+ *  - Con movimiento reducido, porque el scroll nativo es exactamente lo que esa
+ *    preferencia está pidiendo.
+ *  - En punteros gruesos. El suavizado existe para arreglar la rueda del ratón,
+ *    que avanza a saltos; el scroll táctil ya trae la inercia del sistema, que
+ *    corre en el compositor y no en JavaScript. Interponer Lenis ahí sólo añade
+ *    un bucle de rAF que compite con la timeline y hace que el dedo se sienta
+ *    desacoplado de la página.
  */
 export function SmoothScroll() {
   useEffect(() => {
     if (prefersReducedMotion()) return;
+    if (window.matchMedia("(pointer: coarse)").matches) return;
 
     const lenis = new Lenis({
       duration: 1.05,
       // Exponencial: arranca rápido y frena largo. Es lo que hace que un scroll
       // de 300vh se sienta como un plano continuo y no como una lista.
       easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
-      touchMultiplier: 1.6,
     });
 
     lenis.on("scroll", ScrollTrigger.update);

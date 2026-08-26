@@ -45,10 +45,13 @@ export function SiteHeader({ dict, lang }: { dict: Dictionary; lang: Locale }) {
     { scope: ref },
   );
 
+  // `backdrop-blur` sólo en punteros finos: en móvil una barra fija con
+  // desenfoque de fondo se recompone en cada fotograma del scroll. Allí va con
+  // fondo casi opaco, que da la misma separación por cero coste.
   return (
     <header
       ref={ref}
-      className="fixed inset-x-0 top-0 z-50 border-b border-hueso/10 bg-carbon/70 backdrop-blur-md"
+      className="fixed inset-x-0 top-0 z-50 border-b border-hueso/10 bg-carbon/92 [@media(pointer:fine)]:bg-carbon/70 [@media(pointer:fine)]:backdrop-blur-md"
     >
       <div className="gutter flex h-16 items-center justify-between gap-6 md:h-20">
         <Link href={`/${lang}`} className="flex shrink-0 items-center gap-3" aria-label={SITE.name}>

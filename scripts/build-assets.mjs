@@ -21,7 +21,9 @@ const GRID = SRC("ingredients", "Gemini_Generated_Image_pvedwupvedwupved.jfif");
 // cada celda: la última columna es el degradado antialias contra la calle
 // blanca de la rejilla, y la clave lo tomaba por objeto.
 const INSET = 8;
-const CELL = { w: 544 - INSET * 2, h: 719 - INSET * 2 };
+/** Ancho de celda de la lámina: es la unidad contra la que se mide el layout. */
+const SOURCE_CELL = 544;
+const CELL = { w: SOURCE_CELL - INSET * 2, h: 719 - INSET * 2 };
 const COLS = [115, 700, 1285, 1869].map((x) => x + INSET);
 const ROWS = [109, 869].map((y) => y + INSET);
 
@@ -50,6 +52,61 @@ const TUNING = {
   greens: { closeRadius: 1, minAreaRatio: 0.00008, maxHoleRatio: 0.0006 },
   chimichurri: { satMin: 12 },
 };
+
+/**
+ * Hornea la sombra proyectada dentro del propio PNG y sobremuestrea la capa.
+ *
+ * La sombra estaba resuelta con `filter: drop-shadow()` en CSS y era, medido,
+ * la causa del scroll a 30 fps en móvil: el navegador vuelve a rasterizar el
+ * filtro en cada fotograma en que la capa se transforma, y son ocho capas
+ * moviéndose a la vez. Precalculada aquí cuesta cero en tiempo de ejecución.
+ *
+ * De paso se escala x1.9 con Lanczos y un enfoque suave: las celdas de la
+ * lámina original miden ~460 px y en pantalla retina la capa se pinta a más del
+ * doble, así que el navegador estaba ampliando con un filtro peor que este.
+ */
+const SHADOW = { blur: 19, dy: 30, opacity: 0.52, pad: 78 };
+const UPSCALE = 1.9;
+
+async function bakeShadow(cutBuf, w, h, file) {
+  const { pad } = SHADOW;
+  const canvasW = w + pad * 2;
+  const canvasH = h + pad * 2;
+
+  // La silueta sale del propio canal alfa, así que la sombra encaja con el
+  // recorte exacto — incluidos los huecos de los aros de cebolla.
+  const alpha = await sharp(cutBuf)
+    .extractChannel("alpha")
+    .blur(SHADOW.blur)
+    .linear(SHADOW.opacity, 0)
+    .toBuffer();
+  const shadow = await sharp({
+    create: { width: w, height: h, channels: 3, background: { r: 0, g: 0, b: 0 } },
+  })
+    .joinChannel(alpha)
+    .png()
+    .toBuffer();
+
+  const target = Math.round(canvasW * UPSCALE);
+  const info = await sharp({
+    create: {
+      width: canvasW,
+      height: canvasH,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([
+      { input: shadow, left: pad, top: pad + SHADOW.dy },
+      { input: cutBuf, left: pad, top: pad },
+    ])
+    .resize({ width: target, kernel: "lanczos3" })
+    .sharpen({ sigma: 0.6 })
+    .webp({ quality: 92, alphaQuality: 100, effort: 6 })
+    .toFile(file);
+
+  return { width: info.width, height: info.height, unit: canvasW };
+}
 
 async function buildIngredients() {
   await mkdir(OUT("burger"), { recursive: true });
@@ -92,22 +149,26 @@ async function buildIngredients() {
     crop.width = Math.min(crop.width, CELL.w - crop.left);
     crop.height = Math.min(crop.height, CELL.h - crop.top);
 
-    // WebP con pérdida y alfa sin pérdida. En PNG las ocho capas sumaban
-    // 2,6 MB y son el contenido que la sección carga por adelantado; aquí caen
-    // a la décima parte sin que se note en el borde del recorte, que es lo
-    // único que un formato con pérdida podría estropear.
     const file = OUT("burger", `${layer.id}.webp`);
-    await sharp(rgba, { raw: { width: CELL.w, height: CELL.h, channels: 4 } })
+    const cut = await sharp(rgba, { raw: { width: CELL.w, height: CELL.h, channels: 4 } })
       .extract(crop)
-      .webp({ quality: 88, alphaQuality: 100, effort: 6 })
-      .toFile(file);
+      .png()
+      .toBuffer();
+
+    const out = await bakeShadow(cut, crop.width, crop.height, file);
 
     manifest.push({
       id: layer.id,
       stack: layer.stack,
       src: `/burger/${layer.id}.webp`,
-      width: crop.width,
-      height: crop.height,
+      // Dimensiones reales del archivo: las usa next/image para elegir el
+      // tamaño del srcset.
+      width: out.width,
+      height: out.height,
+      // Ancho del elemento como múltiplo de BASE. Va aparte porque el archivo
+      // está sobremuestreado y con margen para la sombra, así que sus píxeles
+      // ya no sirven para calcular el layout.
+      ratio: out.unit / SOURCE_CELL,
       label: { es: layer.es, en: layer.en },
     });
     console.log(

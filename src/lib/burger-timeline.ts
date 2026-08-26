@@ -51,6 +51,11 @@ export const REST_TILT: Record<string, number> = {
 
 export type StageMetrics = {
   height: number;
+  /** Retardo del `scrub` de ScrollTrigger, en segundos. */
+  scrub: number;
+  /** Escala y altura de la hamburguesa en el primer fotograma, antes de scrollear. */
+  restScale: number;
+  restY: number;
   /** Ancho de referencia de la hamburguesa, en px. */
   base: number;
   /** Separación entre capas contiguas al explotar, en px. */
@@ -84,6 +89,17 @@ export function measureStage(width: number, height: number): StageMetrics {
 
   return {
     height,
+    // En móvil el `scrub` va mucho más corto. Un segundo de retardo se nota
+    // como "la página va lenta" cuando se arrastra con el dedo, porque el
+    // movimiento del pulgar es más rápido y más corto que el de una rueda.
+    scrub: isCompact ? 0.35 : 0.9,
+    // En el primer fotograma la hamburguesa aparece armada, encajada en la
+    // banda que dejan el titular arriba y los botones abajo; el scroll la trae
+    // hacia la cámara antes de abrirla. En compacto esa banda es
+    // proporcionalmente más alta —el titular ocupa menos y BASE es menor—, así
+    // que ahí puede ir casi a tamaño completo.
+    restScale: isCompact ? 0.98 : 0.68,
+    restY: height * (isCompact ? -0.005 : 0.075),
     base,
     spacing: base * 0.33,
     openScale,
@@ -115,7 +131,12 @@ export type BuildArgs = {
   boxBack: Element;
   boxFront: Element;
   boxLid: Element;
+  /** Bloque de marca: cintillo, titular y bajada. */
   intro: HTMLElement;
+  /** Botonera de la apertura. */
+  actions: HTMLElement;
+  /** Rótulo "01 — La Colombiana · Capa por capa" de la fase de despiece. */
+  caption: HTMLElement;
   outro: HTMLElement;
   hint: HTMLElement | null;
   metrics: StageMetrics;
@@ -126,9 +147,10 @@ export type BuildArgs = {
  * a estado, así que recorrerla hacia atrás devuelve exactamente el mismo
  * fotograma que hacia adelante.
  *
- *   0.00 → 0.16  entrada     el titular se retira y la hamburguesa sube a plano
- *   0.16 → 0.44  explosión   las ocho capas se separan y el grupo se aleja
- *   0.44 → 0.62  etiquetas   entra el nombre de cada ingrediente
+ *   0.00 → 0.15  apertura    el titular y los botones se retiran; la
+ *                            hamburguesa, ya armada, avanza hacia la cámara
+ *   0.15 → 0.43  explosión   las ocho capas se separan y el grupo se aleja
+ *   0.43 → 0.62  etiquetas   entra el nombre de cada ingrediente
  *   0.62 → 0.80  reapilado   salen las etiquetas y las capas vuelven a juntarse
  *   0.80 → 1.00  encajado    sube la caja, la torre entra y la tapa cierra
  */
@@ -140,21 +162,34 @@ export function buildBurgerTimeline({
   boxFront,
   boxLid,
   intro,
+  actions,
+  caption,
   outro,
   hint,
   metrics,
 }: BuildArgs) {
-  const { base, height, spacing, openScale, openShiftX, boxRestY, boxedGroupY, boxedScale } =
-    metrics;
+  const {
+    base,
+    height,
+    spacing,
+    openScale,
+    openShiftX,
+    boxRestY,
+    boxedGroupY,
+    boxedScale,
+    restScale,
+    restY,
+  } = metrics;
   const mid = (layers.length - 1) / 2;
   const openY = (i: number) => (mid - i) * spacing;
 
   const tl = gsap.timeline({ defaults: { ease: "none" } });
 
   // --- Estado inicial -----------------------------------------------------
-  // La hamburguesa arranca fuera de plano por abajo: el titular necesita la
-  // pantalla entera, y su entrada da a la sección un primer gesto propio.
-  gsap.set(group, { scale: 0.9, x: 0, y: height * 0.62, transformOrigin: "50% 50%" });
+  // La hamburguesa está armada y visible desde el primer fotograma: es lo que
+  // el cliente quiere que se vea al abrir, así que no entra desde fuera de
+  // plano — ya está ahí, y el scroll la abre.
+  gsap.set(group, { scale: restScale, x: 0, y: restY, transformOrigin: "50% 50%" });
   gsap.set(
     layers.map((l) => l.el),
     { xPercent: -50, yPercent: -50, autoAlpha: 1 },
@@ -173,13 +208,15 @@ export function buildBurgerTimeline({
   gsap.set([boxBack, boxFront], { autoAlpha: 0, y: height * 0.75 });
   gsap.set(boxLid, { autoAlpha: 0, y: boxRestY - height * 0.7, rotate: -9 });
   gsap.set(outro, { autoAlpha: 0, y: 40 });
+  gsap.set(caption, { autoAlpha: 0, y: 24 });
 
-  // --- 0.00 → 0.16 · entrada ---------------------------------------------
-  tl.to(intro, { autoAlpha: 0, y: -80, duration: 0.13 }, 0.02);
-  if (hint) tl.to(hint, { autoAlpha: 0, duration: 0.07 }, 0);
-  tl.to(group, { y: 0, scale: 1, duration: 0.16, ease: "power2.out" }, 0);
+  // --- 0.00 → 0.15 · apertura ---------------------------------------------
+  tl.to(intro, { autoAlpha: 0, y: -80, duration: 0.12 }, 0.02);
+  tl.to(actions, { autoAlpha: 0, y: 40, duration: 0.1 }, 0.02);
+  if (hint) tl.to(hint, { autoAlpha: 0, duration: 0.06 }, 0);
+  tl.to(group, { y: 0, scale: 1, duration: 0.15, ease: "power2.out" }, 0);
 
-  // --- 0.16 → 0.44 · explosión -------------------------------------------
+  // --- 0.15 → 0.43 · explosión -------------------------------------------
   // El stagger va de fuera hacia dentro: el pan de arriba y la base arrancan
   // primero y llegan más lejos, que es como se abre de verdad.
   layers.forEach(({ el, id }, i) => {
@@ -192,12 +229,13 @@ export function buildBurgerTimeline({
         duration: 0.28,
         ease: "power3.out",
       },
-      0.16 + (1 - fromCentre) * 0.05,
+      0.15 + (1 - fromCentre) * 0.05,
     );
   });
-  tl.to(group, { scale: openScale, x: openShiftX, duration: 0.28, ease: "power2.inOut" }, 0.16);
+  tl.to(group, { scale: openScale, x: openShiftX, duration: 0.28, ease: "power2.inOut" }, 0.15);
+  tl.to(caption, { autoAlpha: 1, y: 0, duration: 0.07, ease: "power2.out" }, 0.3);
 
-  // --- 0.44 → 0.62 · etiquetas -------------------------------------------
+  // --- 0.43 → 0.62 · etiquetas -------------------------------------------
   // Cada etiqueta se ancla a la altura EN PANTALLA de su capa. Las etiquetas
   // viven fuera del grupo transformado (si viajaran dentro heredarían la escala
   // y el texto perdería nitidez), así que hay que aplicarles la escala a mano.
@@ -207,7 +245,7 @@ export function buildBurgerTimeline({
     tl.to(
       label,
       { autoAlpha: 1, x: 0, duration: 0.1, ease: "power2.out" },
-      0.44 + (layers.length - 1 - i) * 0.014,
+      0.43 + (layers.length - 1 - i) * 0.014,
     );
   });
 
@@ -216,6 +254,7 @@ export function buildBurgerTimeline({
     if (!label) return;
     tl.to(label, { autoAlpha: 0, x: -24, duration: 0.06, ease: "power2.in" }, 0.62);
   });
+  tl.to(caption, { autoAlpha: 0, y: -24, duration: 0.06, ease: "power2.in" }, 0.62);
   layers.forEach(({ el, id }, i) => {
     tl.to(
       el,

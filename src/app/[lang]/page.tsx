@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
-import { Hero } from "@/components/sections/hero";
 import { BurgerSequence } from "@/components/sections/burger-sequence";
 import { Story } from "@/components/sections/story";
 import { Menu } from "@/components/sections/menu";
@@ -18,8 +17,10 @@ export default async function Page({ params }: { params: Promise<{ lang: string 
   return (
     <>
       <SiteHeader dict={dict} lang={lang} />
+      {/* La secuencia de la hamburguesa abre la página: es el primer golpe de
+          efecto y además contiene el titular de la marca, así que no hay un
+          hero de foto por delante. */}
       <main id="contenido">
-        <Hero dict={dict} />
         <BurgerSequence dict={dict} lang={lang} />
         <Story dict={dict} />
         <Menu dict={dict} lang={lang} />

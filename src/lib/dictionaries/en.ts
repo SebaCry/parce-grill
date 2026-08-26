@@ -27,7 +27,10 @@ export const en: Dictionary = {
 
   hero: {
     eyebrow: "Colombian food truck · Utah & Temecula",
-    title: ["This isn't", "just any", "burger"],
+    // Dos líneas, como el español: el titular comparte pantalla con la
+    // hamburguesa armada. "This isn't just any burger" pedía tres y la empujaba
+    // fuera de plano.
+    title: ["Not just", "another burger"],
     lead: "It's La Colombiana. Criollo seasoning, real fire, and that one bite that tastes like home.",
     cta: "Order now",
     ctaSecondary: "See the menu",

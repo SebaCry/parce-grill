@@ -31,12 +31,13 @@ scripts/
   lib/cutout.mjs    recorte por saturación de los objetos fotografiados sobre negro
   shoot.mjs         capturas de la secuencia y de cada sección
   audit.mjs         Web Vitals + repaso de accesibilidad sobre el build de producción
-  probe-*.mjs       diagnósticos del recorte (geometría de la rejilla, máscaras alfa)
+  scrollperf.mjs    fluidez del scroll en móvil con la CPU estrangulada
+  probe-*.mjs       diagnósticos: rejilla de la lámina, máscaras alfa, geometría del escenario
 src/
   app/[lang]/       layout con metadata y JSON-LD por sede + página
   components/
-    sections/       una sección por archivo
-    ui/             caja de la caja en SVG, CTA, reveal
+    sections/       una sección por archivo; burger-sequence.tsx abre la página
+    ui/             la caja en SVG, CTA, reveal
   lib/
     burger-timeline.ts  geometría y coreografía de la secuencia (aislada para poder afinarla)
     gsap.ts             registro de plugins y utilidades de movimiento
@@ -59,6 +60,12 @@ de seguridad para las partes pálidas. Después: cierre morfológico, relleno de
 los huecos pequeños —los grandes se respetan, o el centro de los aros de cebolla
 acabaría siendo un disco negro—, descarte de manchas y pluma en el borde.
 
+Con el recorte hecho, cada capa se escala ×1.9 con Lanczos y un enfoque suave
+—las celdas de la lámina miden ~460 px y en pantalla retina se pintan a más del
+doble— y se le hornea la sombra proyectada. El manifiesto guarda `ratio`, el
+ancho del elemento como múltiplo de BASE, porque tras el sobremuestreo y el
+margen de la sombra los píxeles del archivo ya no sirven para el layout.
+
 Cada ejecución deja dos hojas de revisión en `tmp/`: una sobre el carbón real
 del sitio y otra sobre magenta, donde cualquier halo o hueco mal cerrado salta a
 la vista.
@@ -76,21 +83,25 @@ Con `npm run dev` levantado:
 node scripts/shoot.mjs                       # 9 fotogramas del recorrido + cada sección
 node scripts/shoot.mjs --vp=390x844          # móvil
 node scripts/shoot.mjs --motion=reduce       # variante de movimiento reducido
+node scripts/probe-stage.mjs --at=0          # rectángulos reales, para no medir a ojo
 node scripts/audit.mjs --url=http://localhost:3001/es   # contra `next build && next start`
 ```
 
-La coreografía vive entera en `src/lib/burger-timeline.ts`, en múltiplos del
-ancho de la hamburguesa y de la altura de la ventana. El recorrido es:
+La secuencia **abre la página**: no hay hero de foto por delante, la hamburguesa
+armada es lo primero que se ve y esta sección contiene el `h1` de la marca. La
+coreografía vive entera en `src/lib/burger-timeline.ts`, en múltiplos del ancho
+de la hamburguesa y de la altura de la ventana:
 
 ```
-0.00 → 0.16  entrada     el titular se retira y la hamburguesa sube a plano
-0.16 → 0.44  explosión   las ocho capas se separan y el grupo se aleja
-0.44 → 0.62  etiquetas   entra el nombre de cada ingrediente
+0.00 → 0.15  apertura    el titular y los botones se retiran; la hamburguesa,
+                         ya armada, avanza hacia la cámara
+0.15 → 0.43  explosión   las ocho capas se separan y el grupo se aleja
+0.43 → 0.62  etiquetas   entra el nombre de cada ingrediente
 0.62 → 0.80  reapilado   salen las etiquetas y las capas vuelven a juntarse
 0.80 → 1.00  encajado    sube la caja, la torre entra y la tapa cierra
 ```
 
-Dos cosas que conviene saber antes de tocarla:
+Tres cosas que conviene saber antes de tocarla:
 
 - **GSAP reescribe `transform` entero.** Cualquier elemento que anime `y` no
   puede centrarse con `-translate-1/2` de Tailwind: hay que hacerlo con
@@ -98,6 +109,38 @@ Dos cosas que conviene saber antes de tocarla:
 - **La caja son tres SVG con el mismo `viewBox`**, no uno. La hamburguesa se
   pinta entre el fondo y la pared frontal, y por eso al bajar entra de verdad en
   la caja en vez de desvanecerse.
+- **Nada de filtros CSS sobre las capas.** Ver la sección siguiente.
+
+## Rendimiento en móvil
+
+El scroll iba a 30 fps en un móvil de gama media, con el 61 % de los fotogramas
+fuera de presupuesto. Medido con `scrollperf.mjs`, el culpable era uno solo:
+`filter: drop-shadow()` sobre las ocho capas. El navegador vuelve a rasterizar
+el filtro cada vez que la capa se transforma, y aquí son ocho moviéndose a la
+vez. Quitarlo bastaba para pasar a 60 fps limpios.
+
+La sombra no se perdió: está **horneada en el propio WebP** por
+`bakeShadow()`, generada desde el canal alfa del recorte. Cuesta cero en tiempo
+de ejecución.
+
+En el mismo repaso se retiraron otras tres cosas que se pagan por fotograma:
+el `mix-blend-mode` del grano —una capa fija a pantalla completa con modo de
+fusión obliga a recomponer el documento entero—, el `backdrop-filter` de la
+barra fija en punteros gruesos, y el `blur` sobre la brasa de fondo, que ya era
+un degradado suave. Lenis tampoco se monta en táctil: existe para arreglar la
+rueda del ratón, mientras que la inercia del scroll táctil ya la resuelve el
+sistema en el compositor.
+
+```
+                mediana        p95       tirones >32ms
+antes           33.3 ms        50.1 ms   60.9 %
+después         16.7 ms        16.8 ms    0.8 %
+```
+
+```bash
+node scripts/scrollperf.mjs --cpu=4                  # medir
+node scripts/scrollperf.mjs --cpu=4 --kill=shadow    # atribuir el coste a un sospechoso
+```
 
 ## Accesibilidad
 
