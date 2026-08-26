@@ -1,26 +1,146 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Noche de parrilla. El carbón es el lienzo; el color entra sólo como filo. */
+  --color-carbon: #0b0b0c;
+  --color-carbon-2: #131315;
+  --color-carbon-3: #1c1c1f;
+  --color-hueso: #f4efe6;
+  --color-humo: #8f8a82;
+
+  /* Brasa: el único color que pide clic. */
+  --color-ember: #ff4d1c;
+  --color-ember-soft: #ff7a4d;
+
+  /* Bandera. Nunca los tres juntos como bloques planos: filos, subrayados,
+     hovers. Azul y rojo van levantados respecto al Pantone oficial porque
+     sobre carbón el original se hunde y no pasa contraste. */
+  --color-amarillo: #ffce00;
+  --color-azul: #1e4fd8;
+  --color-rojo: #e01b33;
+
+  --font-display: var(--font-archivo), "Arial Black", system-ui, sans-serif;
+  --font-sans: var(--font-inter-tight), system-ui, sans-serif;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --animate-marquee: marquee 40s linear infinite;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Escala fluida. Un solo clamp por paso evita una cascada de media queries y
+   mantiene la proporción del cartel entre 360px y 1920px. */
+@layer base {
+  :root {
+    /* Los topes están calibrados contra la palabra más larga de cada nivel en
+       español, que es el idioma de referencia y el que produce las líneas más
+       largas: "HAMBURGUESA" en el hero y "COLOMBIA"/"PARRILLA" en los titulares
+       de sección. Subirlos parte esas palabras en dos y descuadra la página. */
+    /* El mínimo del hero está atado a "HAMBURGUESA" en 390px de ancho: a este
+       peso y anchura la palabra ocupa ~0.825em por letra, así que por encima de
+       2.25rem parte en dos y el titular pierde el golpe. */
+    --step-hero: clamp(2.25rem, 8.6vw, 9rem);
+    --step-display: clamp(2.25rem, 5.4vw, 5.25rem);
+    --step-title: clamp(1.6rem, 3.2vw, 2.9rem);
+    --step-lead: clamp(1.05rem, 1.5vw, 1.375rem);
+
+    --gutter: clamp(1.25rem, 5vw, 5.5rem);
+
+    color-scheme: dark;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background: var(--color-carbon);
+    color: var(--color-hueso);
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    overflow-x: clip;
+  }
+
+  ::selection {
+    background: var(--color-ember);
+    color: var(--color-carbon);
+  }
+
+  /* Foco visible sobre carbón: el anillo por defecto del navegador desaparece
+     sobre este fondo. */
+  :focus-visible {
+    outline: 2px solid var(--color-amarillo);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    line-height: 0.88;
+    letter-spacing: -0.03em;
+    text-transform: uppercase;
+    font-stretch: 112%;
+  }
+}
+
+@utility gutter {
+  padding-inline: var(--gutter);
+}
+
+/* Titular de sección: el número de orden vive en un ::before para que no entre
+   en el flujo del texto ni lo lean los lectores de pantalla. */
+@utility eyebrow {
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--color-humo);
+}
+
+/* Regla de la bandera: filo tricolor de 3px reutilizable. */
+@utility flag-edge {
+  background-image: linear-gradient(
+    to right,
+    var(--color-amarillo) 0 50%,
+    var(--color-azul) 50% 75%,
+    var(--color-rojo) 75% 100%
+  );
+}
+
+/* Grano fijo sobre todo el documento. Unifica material fotográfico de calidad
+   desigual y le quita el plano digital al carbón. */
+@utility grain-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  opacity: 0.045;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Todo el movimiento coreografiado se apaga aquí; cada componente entrega su
+   propio estado final estático. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

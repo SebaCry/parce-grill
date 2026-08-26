@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Salidas de revisión: hojas de contacto de los recortes, capturas de la
+# secuencia y logs del servidor de desarrollo. Se regeneran con
+# `npm run assets` y `node scripts/shoot.mjs`.
+/tmp/
