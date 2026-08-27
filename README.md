@@ -49,22 +49,46 @@ src/
 
 `npm run assets` convierte lo que hay en `assets/` en lo que sirve `public/`.
 Lo único no evidente es el recorte de los ingredientes: la lámina es una rejilla
-4×2 de ocho ingredientes fotografiados sobre fondo negro de estudio, y de ahí
-salen los ocho PNG con alfa que la secuencia despliega en el aire.
+4×2 con los ocho ingredientes, y de ahí salen las ocho capas con alfa que la
+secuencia despliega en el aire.
 
-La clave **no** es la luminancia. El fondo de la lámina tiene un degradado que
-llega a lum ~116, muy por encima de las zonas oscuras del chimichurri o la
-tocineta; lo que separa limpiamente es la **saturación**, porque el fondo nunca
-pasa de sat 9 y toda la comida es cromática. La luminancia entra sólo como red
-de seguridad para las partes pálidas. Después: cierre morfológico, relleno de
-los huecos pequeños —los grandes se respetan, o el centro de los aros de cebolla
-acabaría siendo un disco negro—, descarte de manchas y pluma en el borde.
+Han llegado dos láminas —una sobre negro de estudio, otra sobre el tablero de
+transparencia— con los ingredientes en posiciones distintas. Por eso las cajas
+**no** se clavan a mano: `detectCells()` las encuentra por componentes conexas y
+las ordena por filas, de modo que la próxima lámina no obligue a volver a medir.
+Si el recuento no da ocho, el build falla en vez de producir basura.
 
-Con el recorte hecho, cada capa se escala ×1.9 con Lanczos y un enfoque suave
-—las celdas de la lámina miden ~460 px y en pantalla retina se pintan a más del
-doble— y se le hornea la sombra proyectada. El manifiesto guarda `ratio`, el
-ancho del elemento como múltiplo de BASE, porque tras el sobremuestreo y el
-margen de la sombra los píxeles del archivo ya no sirven para el layout.
+La clave **no** es la luminancia. En la lámina oscura el fondo tiene un
+degradado que llega a lum ~116, por encima de las zonas oscuras del chimichurri;
+en la clara el fondo son dos grises a 187 y 229, más claros que casi todo. Lo
+que separa limpiamente en las dos es la **saturación**: el fondo es neutro y la
+comida es cromática. La luminancia entra sólo como red de seguridad, y en
+sentido contrario según el fondo — sobre negro rescata lo brillante, sobre claro
+lo genuinamente oscuro. Después: cierre morfológico, relleno de los huecos
+pequeños —los grandes se respetan, o el centro de los aros de cebolla acabaría
+siendo un disco negro—, descarte de manchas y pluma en el borde.
+
+Queda un paso que no es obvio: **atenuar la sombra**. El cierre morfológico
+engorda la máscara a propósito para no comerse el borde, y de paso se traga la
+sombra del ingrediente. Mientras la capa está sola sobre el carbón no se nota;
+en cuanto se apila sobre otra, aparece como un manchón encima del ingrediente de
+abajo. `foodFactor()` la desvanece con umbrales medidos, no a ojo:
+`probe-halo.mjs` compara las dos poblaciones que hay que separar y en la lámina
+clara da sombra sat p90 ≤ 15 contra comida pálida en 60-130, así que el corte en
+20/24 es holgado. La cebolla es la excepción —su carne blanca es tan poco
+saturada como la sombra— y lleva umbrales propios.
+
+Después, cada capa se escala ×1.9 con Lanczos y un enfoque suave: las celdas de
+la lámina miden ~460 px y en pantalla retina se pintan a más del doble. El
+manifiesto guarda `ratio`, el ancho del elemento como múltiplo de BASE, porque
+tras el sobremuestreo los píxeles del archivo ya no sirven para el layout.
+
+> **Cuidado con el orden del pipeline de sharp.** `resize` se aplica ANTES que
+> `composite`, no después. Crear un lienzo, componer el recorte encima y llamar
+> a `resize` esperando escalar el conjunto agranda el lienzo vacío y pega el
+> ingrediente a tamaño original en una esquina: media resolución y medio
+> recuadro transparente, sin ningún error. Por eso `finishLayer()` escala
+> primero y añade el margen con `extend` después.
 
 Cada ejecución deja dos hojas de revisión en `tmp/`: una sobre el carbón real
 del sitio y otra sobre magenta, donde cualquier halo o hueco mal cerrado salta a
@@ -72,8 +96,12 @@ la vista.
 
 ```bash
 node scripts/build-assets.mjs --only=ingredients   # ciclo corto para afinar el recorte
-node scripts/probe-cutout.mjs                      # vuelca las máscaras alfa
+node scripts/probe-sheet.mjs [ruta]                # niveles del fondo y cajas detectadas
+node scripts/probe-halo.mjs                        # sombra contra comida pálida, en números
 ```
+
+Para cambiar de lámina basta apuntar `GRID` al archivo nuevo y, si el fondo es
+oscuro en vez de claro, poner `SHEET_BG = "dark"`.
 
 ## Revisar la secuencia
 
@@ -119,9 +147,12 @@ fuera de presupuesto. Medido con `scrollperf.mjs`, el culpable era uno solo:
 el filtro cada vez que la capa se transforma, y aquí son ocho moviéndose a la
 vez. Quitarlo bastaba para pasar a 60 fps limpios.
 
-La sombra no se perdió: está **horneada en el propio WebP** por
-`bakeShadow()`, generada desde el canal alfa del recorte. Cuesta cero en tiempo
-de ejecución.
+Se intentó conservarla horneándola en el propio WebP, y fue un error que duró
+poco: sobre el carbón del sitio una sombra negra es **invisible mientras la capa
+flota sola** —que es justo cuando debía dar profundidad— y en cambio se ve
+perfectamente cuando las capas se apilan, porque cae encima del ingrediente de
+abajo como un manchón. Aportaba cero donde hacía falta y estropeaba el resto.
+Fuera: la profundidad la dan la escala y el solape.
 
 En el mismo repaso se retiraron otras tres cosas que se pagan por fotograma:
 el `mix-blend-mode` del grano —una capa fija a pantalla completa con modo de
@@ -167,6 +198,30 @@ Marcado en `src/data/site.ts` con `verified: false` y comentarios `PENDIENTE`:
 
 Los nombres de la carta (`La Clásica`, `La Desmechada`, `La de Pollo`) están
 deducidos de sus fotos: conviene que los confirmen o los cambien por los reales.
+
+### 6. Los ocho ingredientes, a más resolución
+
+Es la mejora de calidad que le queda a la página. Las dos láminas recibidas
+miden 2528×1684, así que cada ingrediente sale a ~460 px y el pipeline lo
+sobremuestrea ×1.9 para llegar a los ~900 px a los que se pinta en retina.
+Amplía bien, pero no puede inventar detalle que no está.
+
+Lo ideal sería:
+
+- **Un archivo por ingrediente**, no una lámina — así ninguno pierde resolución
+  por compartir lienzo.
+- **Mínimo 1200 px de ancho** cada uno.
+- **PNG o WebP con canal alfa**, sin sombra proyectada dentro del archivo. Si el
+  recorte ya viene hecho, mejor; si no, el pipeline lo hace igual de bien
+  siempre que el fondo sea neutro.
+- **Mismo ángulo y misma luz en los ocho** — unos 15° por encima del horizonte.
+  Es el requisito que más se nota si falla: un ingrediente fotografiado desde
+  otra altura rompe la ilusión de que la hamburguesa se está desarmando.
+
+Nota sobre remove.bg: su descarga gratuita sale a 0,25 MP (612×408 para la
+lámina entera, ~110 px por ingrediente). Eso es cuatro veces menos de lo que ya
+hay, así que no sirve — hace falta la descarga a resolución completa, o
+directamente el original sin recortar, que el pipeline keyea solo.
 
 ## Deploy
 

@@ -1,17 +1,23 @@
-// Recorte de objetos fotografiados sobre fondo negro de estudio.
+// Recorte de ingredientes fotografiados sobre un fondo neutro.
 //
-// Un umbral de luminancia no sirve: el fondo de la lámina tiene un degradado
-// que llega a lum ~116, muy por encima de las zonas oscuras del chimichurri o
-// la tocineta. Lo que sí separa limpiamente es la SATURACIÓN — medida sobre el
-// marco exterior de las ocho celdas, el fondo nunca pasa de sat 9, mientras que
-// toda la comida es cromática. La luminancia sólo entra como red de seguridad
-// para las partes pálidas (la carne blanca de la cebolla, el nervio de la
-// lechuga), donde el brillo sí despega del fondo.
+// En las dos láminas recibidas —una sobre negro de estudio, otra sobre el
+// tablero de transparencia— el fondo es NEUTRO y la comida es CROMÁTICA, y esa
+// es la única propiedad en la que se puede confiar. Un umbral de luminancia no
+// sirve en ninguna de las dos: en la oscura el fondo tiene un degradado que
+// llega a lum ~116, por encima de las zonas oscuras del chimichurri; en la
+// clara el fondo son dos grises a 187 y 229, más claros que casi todo.
 //
-// Pipeline: clave por saturación -> cierre morfológico -> relleno de huecos
-// interiores -> descarte de manchas -> pluma en el borde.
+// De ahí que la clave sea la SATURACIÓN, con la luminancia sólo como red de
+// seguridad para lo que el color no alcanza: en fondo oscuro rescata lo pálido
+// y muy brillante, en fondo claro rescata lo muy oscuro.
+//
+// Pipeline: clave -> cierre morfológico -> relleno de huecos pequeños ->
+// descarte de manchas -> pluma -> atenuado de sombra.
 
-function foregroundMask(data, W, H, C, { satMin, lumHigh }) {
+/**
+ * @param {"dark"|"light"} bg  polaridad del fondo de la lámina
+ */
+function foregroundMask(data, W, H, C, { satMin, lumHigh, lumLow, bg }) {
   const fg = new Uint8Array(W * H);
   for (let p = 0, i = 0; p < W * H; p++, i += C) {
     const r = data[i], g = data[i + 1], b = data[i + 2];
@@ -21,7 +27,7 @@ function foregroundMask(data, W, H, C, { satMin, lumHigh }) {
       continue;
     }
     const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    if (lum > lumHigh) fg[p] = 1;
+    fg[p] = bg === "dark" ? (lum > lumHigh ? 1 : 0) : lum < lumLow ? 1 : 0;
   }
   return fg;
 }
@@ -155,6 +161,50 @@ function dropSpecks(fg, W, H, minAreaRatio) {
   return { kept, dropped };
 }
 
+/**
+ * Atenúa los píxeles que son sombra de estudio, no comida.
+ *
+ * El cierre morfológico y la dilatación engordan la máscara a propósito para no
+ * comerse el borde, pero de paso se tragan la sombra que el ingrediente proyecta
+ * sobre la mesa. Mientras la capa está sola sobre el carbón eso no se ve; en
+ * cuanto se apila sobre otra, esa sombra aparece como un manchón negro encima
+ * del ingrediente de abajo.
+ *
+ * El discriminante es el mismo que separa el fondo: la comida es cromática o
+ * clara, la sombra es oscura y neutra. Se calcula un factor de "comestibilidad"
+ * y se multiplica por el alfa, de modo que la sombra se desvanece y el
+ * ingrediente se conserva entero.
+ */
+function foodFactor(
+  data,
+  W,
+  H,
+  C,
+  { foodSatMin, foodLumHigh, foodDarkBelow, foodDarkSoft, lo, hi, bg },
+) {
+  const out = new Float32Array(W * H);
+  for (let p = 0, i = 0; p < W * H; p++, i += C) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const sat = Math.max(r, g, b) - Math.min(r, g, b);
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    // El rescate por luminancia se invierte según el fondo. Sobre negro salva
+    // lo brillante. Sobre claro NO puede ser "cuanto más oscuro, más comida",
+    // porque eso describe también a la sombra dibujada: es una rampa que sólo
+    // se activa por debajo de donde la sombra llega a oscurecer, y así rescata
+    // el chimichurri y el tostado sin rescatar el halo.
+    const byLum =
+      bg === "dark"
+        ? lum / foodLumHigh
+        : Math.min(1, Math.max(0, (foodDarkBelow - lum) / foodDarkSoft));
+    const food = Math.max(sat / foodSatMin, byLum);
+    // Smoothstep entre lo y hi: por debajo es sombra pura, por encima es
+    // ingrediente, y en medio una transición suave que no deja borde duro.
+    const t = Math.min(1, Math.max(0, (food - lo) / (hi - lo)));
+    out[p] = t * t * (3 - 2 * t);
+  }
+  return out;
+}
+
 /** Box blur separable: convierte el borde duro de la máscara en pluma. */
 function featherMask(mask, W, H, radius, passes) {
   const buf = Float32Array.from(mask, (v) => v * 255);
@@ -189,26 +239,52 @@ function featherMask(mask, W, H, radius, passes) {
  */
 export function cutoutFromBlack(data, W, H, C, opts = {}) {
   const {
+    /** "dark" = lámina sobre negro; "light" = sobre el tablero de transparencia. */
+    bg = "dark",
     satMin = 14,
     lumHigh = 120,
+    /** Sólo en fondo claro: por debajo de esto es comida oscura, no sombra. */
+    lumLow = 105,
     closeRadius = 2,
     maxHoleRatio = 0.004,
     minAreaRatio = 0.0004,
     growRadius = 1,
     featherRadius = 1,
     featherPasses = 2,
-    // Umbral para calcular el bounding box. Deliberadamente alto: el reflejo
-    // del ingrediente sobre la mesa del estudio se conserva (da peso al objeto
-    // cuando flota) pero su cola más tenue no debe inflar el lienzo.
+    /**
+     * Umbrales del desvanecido de sombra; ver `foodFactor`. Son más exigentes
+     * que los del keyeo a propósito: separar el objeto del fondo negro sólo
+     * pide distinguirlo de un gris neutro, pero distinguir el ingrediente de su
+     * PROPIA sombra proyectada pide más, porque esa sombra hereda algo del
+     * color de lo que la proyecta —la del pan es marrón, no gris— y con el
+     * umbral del keyeo pasaba por comida.
+     */
+    foodSatMin = 26,
+    foodLumHigh = 140,
+    /** Sólo en fondo claro: rampa de rescate para la comida genuinamente oscura. */
+    foodDarkBelow = 95,
+    foodDarkSoft = 40,
+    shadowLo = 0.5,
+    shadowHi = 1.05,
     alphaFloor = 45,
   } = opts;
 
-  let fg = foregroundMask(data, W, H, C, { satMin, lumHigh });
+  let fg = foregroundMask(data, W, H, C, { satMin, lumHigh, lumLow, bg });
   fg = close(fg, W, H, closeRadius);
   const holes = fillSmallHoles(fg, W, H, maxHoleRatio);
   const blobs = dropSpecks(fg, W, H, minAreaRatio);
   fg = dilate(fg, W, H, growRadius);
   const soft = featherMask(fg, W, H, featherRadius, featherPasses);
+  const food = foodFactor(data, W, H, C, {
+    foodSatMin,
+    foodLumHigh,
+    foodDarkBelow,
+    foodDarkSoft,
+    lo: shadowLo,
+    hi: shadowHi,
+    bg,
+  });
+  for (let p = 0; p < soft.length; p++) soft[p] *= food[p];
 
   const rgba = Buffer.alloc(W * H * 4);
   let minX = W, minY = H, maxX = -1, maxY = -1, covered = 0;

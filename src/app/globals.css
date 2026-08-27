@@ -50,7 +50,10 @@
        7vw parte una de las dos en mitad y el titular pierde el golpe.
        Además comparte pantalla con la hamburguesa armada, que también pide
        sitio. */
-    --step-hero: clamp(2.25rem, 7vw, 7.5rem);
+    /* El `min()` con `svh` es lo que evita que en un monitor ancho y bajo el
+       titular se coma la pantalla y deje a la hamburguesa como un objeto
+       pequeño flotando debajo: en esas ventanas manda la altura, no el ancho. */
+    --step-hero: clamp(2.25rem, min(6.4vw, 11.5svh), 6.75rem);
     --step-display: clamp(2.25rem, 5.4vw, 5.25rem);
     --step-title: clamp(1.6rem, 3.2vw, 2.9rem);
     --step-lead: clamp(1.05rem, 1.5vw, 1.375rem);

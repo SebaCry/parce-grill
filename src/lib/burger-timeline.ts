@@ -27,14 +27,14 @@ export const SCROLL_LENGTH_VH = 420;
  * antes de separarse.
  */
 export const CLOSED_OFFSET: Record<string, number> = {
-  "bun-bottom": 0.3,
-  papas: 0.19,
-  patty: 0.08,
+  "bun-bottom": 0.24,
+  papas: 0.15,
+  patty: 0.07,
   bacon: -0.01,
-  chimichurri: -0.08,
-  onion: -0.14,
-  greens: -0.22,
-  "bun-top": -0.38,
+  chimichurri: -0.07,
+  onion: -0.11,
+  greens: -0.17,
+  "bun-top": -0.31,
 };
 
 /** Inclinación de reposo. Rompe la simetría de fotomontaje sin llamar la atención. */
@@ -81,8 +81,18 @@ export type StageMetrics = {
  */
 export function measureStage(width: number, height: number): StageMetrics {
   const isCompact = width < 768;
-  const base = Math.min(height * 0.4, width * (isCompact ? 0.62 : 0.5));
-  const openScale = isCompact ? 0.62 : 0.7;
+  // BASE es el ancho del RECUADRO de una capa, y desde que el recorte llena su
+  // lienzo (antes ocupaba la mitad por un fallo de escalado) el ingrediente
+  // mide casi tanto como el recuadro. De ahí que estos factores sean la mitad
+  // de los anteriores para el mismo resultado en pantalla — y algo más, porque
+  // la hamburguesa gana presencia frente al titular.
+  // Lo que limitaba el tamaño de la hamburguesa no era el primer plano sino la
+  // torre abierta, que tiene que caber entera en vertical. Separando las dos
+  // escalas —grande en reposo, `openScale` mucho menor al explotar— la apertura
+  // gana presencia sin que el despiece se salga de pantalla. Es además lo que
+  // hace de la explosión un movimiento de cámara hacia atrás.
+  const base = Math.min(height * 0.77, width * (isCompact ? 1.3 : 0.9));
+  const openScale = 0.42;
   // La caja descansa apenas por debajo del centro. Más abajo se comía el
   // titular de cierre y el botón; más arriba dejaba la composición desfondada.
   const boxRestY = height * 0.02;
@@ -98,17 +108,17 @@ export function measureStage(width: number, height: number): StageMetrics {
     // hacia la cámara antes de abrirla. En compacto esa banda es
     // proporcionalmente más alta —el titular ocupa menos y BASE es menor—, así
     // que ahí puede ir casi a tamaño completo.
-    restScale: isCompact ? 0.98 : 0.68,
-    restY: height * (isCompact ? -0.005 : 0.075),
+    restScale: 0.66,
+    restY: height * (isCompact ? 0.02 : 0.1),
     base,
-    spacing: base * 0.33,
+    spacing: base * 0.28,
     openScale,
     boxedScale: openScale * 0.8,
     // La torre se corre a la izquierda y las etiquetas ocupan la derecha. En
     // compacto el desplazamiento es MAYOR en proporción, no menor: los nombres
     // largos ("Carne 100% res + cheddar") necesitan todo el ancho que quede.
-    openShiftX: isCompact ? -width * 0.14 : -width * 0.11,
-    boxWidth: base * 1.25,
+    openShiftX: isCompact ? -width * 0.24 : -width * 0.11,
+    boxWidth: base * 0.62,
     boxRestY,
     // La torre baja hasta quedar justo a ras del canto de la tapa: si se queda
     // más arriba, la tapa cierra por debajo de la hamburguesa y se ve flotando

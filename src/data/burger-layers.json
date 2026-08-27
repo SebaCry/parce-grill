@@ -3,9 +3,9 @@
     "id": "bun-bottom",
     "stack": 0,
     "src": "/burger/bun-bottom.webp",
-    "width": 1121,
-    "height": 889,
-    "ratio": 1.0845588235294117,
+    "width": 851,
+    "height": 610,
+    "ratio": 0.8235294117647058,
     "label": {
       "es": "Base tostada",
       "en": "Toasted base"
@@ -15,9 +15,9 @@
     "id": "papas",
     "stack": 1,
     "src": "/burger/papas.webp",
-    "width": 1269,
-    "height": 919,
-    "ratio": 1.2279411764705883,
+    "width": 1012,
+    "height": 645,
+    "ratio": 0.9797794117647058,
     "label": {
       "es": "Papa al hilo",
       "en": "Shoestring potato"
@@ -27,9 +27,9 @@
     "id": "patty",
     "stack": 2,
     "src": "/burger/patty.webp",
-    "width": 1178,
-    "height": 891,
-    "ratio": 1.1397058823529411,
+    "width": 906,
+    "height": 644,
+    "ratio": 0.8768382352941176,
     "label": {
       "es": "Carne 100% res + cheddar",
       "en": "100% beef + cheddar"
@@ -39,9 +39,9 @@
     "id": "bacon",
     "stack": 3,
     "src": "/burger/bacon.webp",
-    "width": 1222,
-    "height": 943,
-    "ratio": 1.181985294117647,
+    "width": 955,
+    "height": 644,
+    "ratio": 0.9246323529411765,
     "label": {
       "es": "Tocineta ahumada",
       "en": "Smoked bacon"
@@ -51,9 +51,9 @@
     "id": "chimichurri",
     "stack": 4,
     "src": "/burger/chimichurri.webp",
-    "width": 1161,
-    "height": 842,
-    "ratio": 1.1231617647058822,
+    "width": 887,
+    "height": 598,
+    "ratio": 0.8584558823529411,
     "label": {
       "es": "Chimichurri criollo",
       "en": "Criollo chimichurri"
@@ -63,9 +63,9 @@
     "id": "onion",
     "stack": 5,
     "src": "/burger/onion.webp",
-    "width": 1169,
-    "height": 831,
-    "ratio": 1.130514705882353,
+    "width": 910,
+    "height": 574,
+    "ratio": 0.8805147058823529,
     "label": {
       "es": "Cebolla morada",
       "en": "Red onion"
@@ -75,9 +75,9 @@
     "id": "greens",
     "stack": 6,
     "src": "/burger/greens.webp",
-    "width": 1237,
-    "height": 1003,
-    "ratio": 1.1966911764705883,
+    "width": 971,
+    "height": 735,
+    "ratio": 0.9393382352941176,
     "label": {
       "es": "Lechuga fresca",
       "en": "Fresh lettuce"
@@ -87,9 +87,9 @@
     "id": "bun-top",
     "stack": 7,
     "src": "/burger/bun-top.webp",
-    "width": 1172,
-    "height": 1073,
-    "ratio": 1.1341911764705883,
+    "width": 898,
+    "height": 735,
+    "ratio": 0.8694852941176471,
     "label": {
       "es": "Pan brioche",
       "en": "Brioche bun"

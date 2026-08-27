@@ -11,25 +11,33 @@ import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { cutoutFromBlack } from "./lib/cutout.mjs";
+import { detectCells, padBox } from "./lib/detect-cells.mjs";
 
 const ROOT = process.cwd();
 const SRC = (...p) => path.join(ROOT, "assets", ...p);
 const OUT = (...p) => path.join(ROOT, "public", ...p);
 
-const GRID = SRC("ingredients", "Gemini_Generated_Image_pvedwupvedwupved.jfif");
-// Medido sobre la lámina con scripts/probe-grid.mjs. INSET descarta el borde de
-// cada celda: la última columna es el degradado antialias contra la calle
-// blanca de la rejilla, y la clave lo tomaba por objeto.
-const INSET = 8;
-/** Ancho de celda de la lámina: es la unidad contra la que se mide el layout. */
+/**
+ * Lámina de ingredientes. La segunda que manda el cliente: misma resolución que
+ * la anterior (2528x1684, ~460 px por ingrediente) pero sobre el tablero de
+ * transparencia en vez de sobre negro de estudio, lo que la hace mucho más
+ * limpia — las sombras ya no van pegadas al objeto, son grises neutros que la
+ * clave por saturación descarta sola.
+ *
+ * Pese a la extensión .png es un JPEG sin canal alfa; da igual, el recorte se
+ * hace aquí. Las posiciones NO se clavan: `detectCells` las encuentra, para que
+ * la próxima lámina no obligue a volver a medir.
+ */
+const GRID = SRC("ingredients", "Gemini_Generated_Image_nnag23nnag23nnag.png");
+const SHEET_BG = "light";
+/** Unidad de referencia del layout: el ancho nominal de una celda. */
 const SOURCE_CELL = 544;
-const CELL = { w: SOURCE_CELL - INSET * 2, h: 719 - INSET * 2 };
-const COLS = [115, 700, 1285, 1869].map((x) => x + INSET);
-const ROWS = [109, 869].map((y) => y + INSET);
+/** Aire alrededor de cada objeto detectado, para que la pluma tenga sitio. */
+const BOX_PAD = 26;
 
 /**
  * `stack` es el orden real de la hamburguesa de abajo hacia arriba (0 = pan
- * inferior). La secuencia de scroll separa las capas siguiendo este índice.
+ * inferior). `cell` es el orden de lectura dentro de la lámina.
  */
 const LAYERS = [
   { cell: 0, id: "bun-top",      stack: 7, es: "Pan brioche",        en: "Brioche bun" },
@@ -42,70 +50,90 @@ const LAYERS = [
   { cell: 7, id: "bun-bottom",   stack: 0, es: "Base tostada",       en: "Toasted base" },
 ];
 
-// Ajustes por ingrediente. Los tres porosos (papa al hilo, aros de cebolla,
-// lechuga) van con cierre mínimo y filtro de manchas permisivo: se prefiere
-// conservar los claros entre hebras y el centro de los aros, aunque eso deje
-// piezas sueltas, a fabricar una silueta compacta que se delataría al flotar.
+/**
+ * Ajustes por ingrediente sobre los umbrales por defecto.
+ *
+ * Los tres porosos (papa al hilo, aros de cebolla, lechuga) van con cierre
+ * mínimo y filtro de manchas permisivo: se prefiere conservar los claros entre
+ * hebras y el centro de los aros, aunque eso deje piezas sueltas, a fabricar una
+ * silueta compacta que se delataría al flotar.
+ */
 const TUNING = {
   papas: { closeRadius: 1, minAreaRatio: 0.00004, maxHoleRatio: 0.0004 },
-  onion: { closeRadius: 1, minAreaRatio: 0.0002, maxHoleRatio: 0.0006 },
   greens: { closeRadius: 1, minAreaRatio: 0.00008, maxHoleRatio: 0.0006 },
-  chimichurri: { satMin: 12 },
+  // La cebolla es el único caso donde el umbral general se pasa de listo: su
+  // carne blanca es tan poco saturada como la sombra dibujada (sat ~16 contra
+  // ~15), así que con el corte de 20/24 el aro se quedaba en cuatro líneas
+  // moradas sin relleno. Baja el umbral y asume un halo mínimo, que sobre
+  // carbón no se ve.
+  onion: {
+    closeRadius: 1,
+    minAreaRatio: 0.0002,
+    maxHoleRatio: 0.0006,
+    satMin: 10,
+    foodSatMin: 12,
+  },
 };
 
 /**
- * Hornea la sombra proyectada dentro del propio PNG y sobremuestrea la capa.
+ * Umbrales de la lámina clara, elegidos con datos y no a ojo.
  *
- * La sombra estaba resuelta con `filter: drop-shadow()` en CSS y era, medido,
- * la causa del scroll a 30 fps en móvil: el navegador vuelve a rasterizar el
- * filtro en cada fotograma en que la capa se transforma, y son ocho capas
- * moviéndose a la vez. Precalculada aquí cuesta cero en tiempo de ejecución.
- *
- * De paso se escala x1.9 con Lanczos y un enfoque suave: las celdas de la
- * lámina original miden ~460 px y en pantalla retina la capa se pinta a más del
- * doble, así que el navegador estaba ampliando con un filtro peor que este.
+ * `probe-halo.mjs` mide las dos poblaciones que hay que separar: la sombra que
+ * la lámina trae dibujada (saturación p50=2, p90≤15) y la comida pálida —la
+ * miga del pan, la papa, el tostado— que se va a 60-130. Con ese margen, cortar
+ * en 20/24 mata el halo entero sin tocar la comida. La carne blanca de la
+ * cebolla es la única que se solapa con la sombra, y sobrevive porque queda
+ * encerrada por los aros morados y la rescata el relleno de huecos.
  */
-const SHADOW = { blur: 19, dy: 30, opacity: 0.52, pad: 78 };
+const SHEET_DEFAULTS = {
+  bg: SHEET_BG,
+  satMin: 20,
+  lumLow: 70,
+  foodSatMin: 24,
+  foodDarkBelow: 95,
+  foodDarkSoft: 40,
+};
+
+/**
+ * Deja la capa lista para servir: la sobremuestrea y la enfoca.
+ *
+ * Aquí se horneaba también una sombra proyectada, y fue un error. Sobre el
+ * carbón del sitio una sombra negra es invisible mientras la capa flota sola,
+ * que es justo cuando debía aportar profundidad; y en cambio se ve
+ * perfectamente cuando las capas se apilan, porque cae encima del ingrediente
+ * de abajo como un manchón. Aportaba cero donde hacía falta y estropeaba el
+ * resto, así que fuera. La profundidad la dan la escala y el solape.
+ *
+ * El escalado x1.9 con Lanczos sí se queda: las celdas de la lámina original
+ * miden ~460 px y en pantalla retina la capa se pinta a más del doble, de modo
+ * que el navegador estaba ampliando con un filtro peor que este.
+ */
+const PAD = 8;
 const UPSCALE = 1.9;
 
-async function bakeShadow(cutBuf, w, h, file) {
-  const { pad } = SHADOW;
-  const canvasW = w + pad * 2;
-  const canvasH = h + pad * 2;
-
-  // La silueta sale del propio canal alfa, así que la sombra encaja con el
-  // recorte exacto — incluidos los huecos de los aros de cebolla.
-  const alpha = await sharp(cutBuf)
-    .extractChannel("alpha")
-    .blur(SHADOW.blur)
-    .linear(SHADOW.opacity, 0)
-    .toBuffer();
-  const shadow = await sharp({
-    create: { width: w, height: h, channels: 3, background: { r: 0, g: 0, b: 0 } },
-  })
-    .joinChannel(alpha)
-    .png()
-    .toBuffer();
-
-  const target = Math.round(canvasW * UPSCALE);
-  const info = await sharp({
-    create: {
-      width: canvasW,
-      height: canvasH,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .composite([
-      { input: shadow, left: pad, top: pad + SHADOW.dy },
-      { input: cutBuf, left: pad, top: pad },
-    ])
-    .resize({ width: target, kernel: "lanczos3" })
+async function finishLayer(cutBuf, w, h, file) {
+  // OJO con el orden del pipeline de sharp: `resize` se aplica ANTES que
+  // `composite`, no después. La versión anterior creaba el lienzo, componía el
+  // recorte encima y llamaba a resize esperando escalar el conjunto — lo que
+  // hacía en realidad era agrandar el lienzo vacío y pegar el ingrediente a
+  // tamaño original en una esquina. Resultado: la mitad de la resolución
+  // prevista y medio recuadro transparente. Escalando primero y añadiendo el
+  // margen con `extend` después, el orden deja de importar.
+  const pad = Math.round(PAD * UPSCALE);
+  const info = await sharp(cutBuf)
+    .resize({ width: Math.round(w * UPSCALE), kernel: "lanczos3" })
     .sharpen({ sigma: 0.6 })
+    .extend({
+      top: pad,
+      bottom: pad,
+      left: pad,
+      right: pad,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
     .webp({ quality: 92, alphaQuality: 100, effort: 6 })
     .toFile(file);
 
-  return { width: info.width, height: info.height, unit: canvasW };
+  return { width: info.width, height: info.height, unit: w + PAD * 2 };
 }
 
 async function buildIngredients() {
@@ -113,24 +141,38 @@ async function buildIngredients() {
   const base = sharp(GRID);
   const manifest = [];
 
+  // Una sola pasada sobre la lámina completa para localizar los ocho objetos.
+  const sheet = await base.clone().removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const SW = sheet.info.width, SH = sheet.info.height, SC = sheet.info.channels;
+  const boxes = detectCells(sheet.data, SW, SH, SC, (p) => {
+    const i = p * SC;
+    const r = sheet.data[i], g = sheet.data[i + 1], b = sheet.data[i + 2];
+    const sat = Math.max(r, g, b) - Math.min(r, g, b);
+    if (sat > 22) return true;
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b < SHEET_DEFAULTS.lumLow;
+  });
+  if (boxes.length !== LAYERS.length) {
+    throw new Error(
+      `Se detectaron ${boxes.length} ingredientes en la lámina y se esperaban ${LAYERS.length}. ` +
+        `Revisar con: node scripts/probe-sheet.mjs`,
+    );
+  }
+  console.log(`  · ${boxes.length} ingredientes localizados en ${SW}x${SH}`);
+
   for (const layer of LAYERS) {
-    const left = COLS[layer.cell % 4];
-    const top = ROWS[Math.floor(layer.cell / 4)];
+    const cell = padBox(boxes[layer.cell], SW, SH, BOX_PAD);
 
     const { data, info } = await base
       .clone()
-      .extract({ left, top, width: CELL.w, height: CELL.h })
+      .extract(cell)
       .removeAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
 
-    const { rgba, bbox, empty, stats } = cutoutFromBlack(
-      data,
-      info.width,
-      info.height,
-      info.channels,
-      TUNING[layer.id] ?? {},
-    );
+    const { rgba, bbox, empty, stats } = cutoutFromBlack(data, info.width, info.height, info.channels, {
+      ...SHEET_DEFAULTS,
+      ...(TUNING[layer.id] ?? {}),
+    });
     if (empty) throw new Error(`No se encontró objeto en la celda de "${layer.id}"`);
     // Cobertura casi total = la clave falló y se rellenó la celda entera.
     if (stats.coverage > 0.85) {
@@ -143,19 +185,21 @@ async function buildIngredients() {
     const crop = {
       left: Math.max(0, bbox.left - pad),
       top: Math.max(0, bbox.top - pad),
-      width: Math.min(CELL.w, bbox.width + pad * 2),
-      height: Math.min(CELL.h, bbox.height + pad * 2),
+      width: Math.min(info.width, bbox.width + pad * 2),
+      height: Math.min(info.height, bbox.height + pad * 2),
     };
-    crop.width = Math.min(crop.width, CELL.w - crop.left);
-    crop.height = Math.min(crop.height, CELL.h - crop.top);
+    crop.width = Math.min(crop.width, info.width - crop.left);
+    crop.height = Math.min(crop.height, info.height - crop.top);
 
     const file = OUT("burger", `${layer.id}.webp`);
-    const cut = await sharp(rgba, { raw: { width: CELL.w, height: CELL.h, channels: 4 } })
+    const cut = await sharp(rgba, {
+      raw: { width: info.width, height: info.height, channels: 4 },
+    })
       .extract(crop)
       .png()
       .toBuffer();
 
-    const out = await bakeShadow(cut, crop.width, crop.height, file);
+    const out = await finishLayer(cut, crop.width, crop.height, file);
 
     manifest.push({
       id: layer.id,

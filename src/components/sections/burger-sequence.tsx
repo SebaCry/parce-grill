@@ -229,9 +229,12 @@ export function BurgerSequence({ dict, lang }: Props) {
 
           {/* Rótulo de la fase de despiece. Entra cuando el titular ya se ha ido
               y las capas están separadas. */}
+          {/* En pantalla ancha va arriba a la izquierda, en la banda que deja
+              libre la torre. En compacto no cabe ahí —la torre arranca casi
+              pegada al header— así que baja al pie. */}
           <div
             ref={captionRef}
-            className="gutter absolute top-[14svh] left-0 z-40 text-left opacity-0"
+            className="gutter absolute inset-x-0 bottom-[6svh] z-40 text-center opacity-0 sm:inset-x-auto sm:top-[14svh] sm:bottom-auto sm:left-0 sm:text-left"
           >
             <p className="eyebrow">{dict.burger.eyebrow}</p>
             <p className="mt-3 font-display text-(length:--step-title) uppercase">
@@ -247,7 +250,7 @@ export function BurgerSequence({ dict, lang }: Props) {
               ingrediente; aquí sólo se declara la columna. */}
           <ul
             aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 left-[44%] z-40 sm:left-[52%] lg:left-[56%]"
+            className="pointer-events-none absolute inset-y-0 left-[48%] z-40 sm:left-[52%] lg:left-[56%]"
           >
             {LAYERS.map((layer) => (
               <li
